@@ -409,11 +409,16 @@ void LibretroDroid::destroy() {
 
     LOGD("Performing libretrodroid destroy");
 
+    // Unload the game first and tell the core its GL context is going away only after that, as
+    // RetroArch does. Cores with their own render thread (ARMSX2's GS) release the context in
+    // context_destroy and keep drawing until the content is unloaded; with the calls the other way
+    // round that thread draws without a context and the process aborts.
+    core->retro_unload_game();
+
     if (Environment::getInstance().getHwContextDestroy() != nullptr) {
         Environment::getInstance().getHwContextDestroy()();
     }
 
-    core->retro_unload_game();
     core->retro_deinit();
 
     video = nullptr;
