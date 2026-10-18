@@ -19,6 +19,7 @@
 
 #include <EGL/egl.h>
 
+#include <cctype>
 #include <string>
 #include <utility>
 #include <vector>
@@ -409,14 +410,27 @@ void LibretroDroid::destroy() {
 
     LOGD("Performing libretrodroid destroy");
 
-    // Unload the game first and tell the core its GL context is going away only after that, as
-    // RetroArch does. Cores with their own render thread (ARMSX2's GS) release the context in
-    // context_destroy and keep drawing until the content is unloaded; with the calls the other way
-    // round that thread draws without a context and the process aborts.
-    core->retro_unload_game();
+    // ARMSX2 releases its GS thread's context in context_destroy and keeps drawing until the
+    // content is unloaded, so for it the game goes first: with the calls the other way round the GS
+    // thread draws without a context and the process aborts. PPSSPP is the opposite: it needs
+    // context_destroy first, and crashes unloading without it.
+    struct retro_system_info systemInfo {};
+    core->retro_get_system_info(&systemInfo);
+    std::string libraryName = systemInfo.library_name != nullptr ? systemInfo.library_name : "";
+    for (auto& c : libraryName) c = (char) tolower((unsigned char) c);
+    bool unloadFirst = libraryName.find("armsx2") != std::string::npos
+        || libraryName.find("pcsx2") != std::string::npos;
+
+    if (unloadFirst) {
+        core->retro_unload_game();
+    }
 
     if (Environment::getInstance().getHwContextDestroy() != nullptr) {
         Environment::getInstance().getHwContextDestroy()();
+    }
+
+    if (!unloadFirst) {
+        core->retro_unload_game();
     }
 
     core->retro_deinit();
