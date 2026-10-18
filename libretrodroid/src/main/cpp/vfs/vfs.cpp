@@ -18,6 +18,8 @@
 #include "vfs.h"
 
 #include <unistd.h>
+#include <sys/stat.h>
+#include <climits>
 #include <optional>
 
 #include "vfs/vfs_implementation.h"
@@ -91,6 +93,50 @@ int64_t VFS::truncate(struct retro_vfs_file_handle* stream, int64_t length) {
     return retro_vfs_file_truncate_impl(stream, length);
 }
 
+// VFS API v3. A virtual file has no path on disk, so the system cannot answer for it: stat looks
+// at its descriptor. Everything else is a real path and goes to the libretro-common implementation.
+int VFS::stat(const char *path, int32_t *size) {
+    LOGV("VFS Calling stat: %s", path);
+    VFSFile* virtualFile = VFS::getInstance().findVirtualFile(path);
+    if (virtualFile == nullptr) {
+        return retro_vfs_stat_impl(path, size);
+    }
+    struct stat info {};
+    if (fstat(virtualFile->getFD(), &info) != 0) {
+        return 0;
+    }
+    if (size != nullptr) {
+        // The interface only has 32 bits for the size; a disc over 2 GB gets the most it can say,
+        // and the core reads the real size through the handle.
+        *size = info.st_size > INT32_MAX ? INT32_MAX : static_cast<int32_t>(info.st_size);
+    }
+    return RETRO_VFS_STAT_IS_VALID;
+}
+
+int VFS::mkdir(const char *dir) {
+    return retro_vfs_mkdir_impl(dir);
+}
+
+struct retro_vfs_dir_handle* VFS::opendir(const char *dir, bool include_hidden) {
+    return retro_vfs_opendir_impl(dir, include_hidden);
+}
+
+bool VFS::readdir(struct retro_vfs_dir_handle *dirstream) {
+    return retro_vfs_readdir_impl(dirstream);
+}
+
+const char* VFS::direntGetName(struct retro_vfs_dir_handle *dirstream) {
+    return retro_vfs_dirent_get_name_impl(dirstream);
+}
+
+bool VFS::direntIsDir(struct retro_vfs_dir_handle *dirstream) {
+    return retro_vfs_dirent_is_dir_impl(dirstream);
+}
+
+int VFS::closedir(struct retro_vfs_dir_handle *dirstream) {
+    return retro_vfs_closedir_impl(dirstream);
+}
+
 retro_vfs_interface * VFS::getInterface() {
     return new retro_vfs_interface {
         /* Introduced in VFS API v1 */
@@ -107,7 +153,16 @@ retro_vfs_interface * VFS::getInterface() {
         &VFS::rename,
 
         /* Introduced in VFS API v2 */
-        &VFS::truncate
+        &VFS::truncate,
+
+        /* Introduced in VFS API v3 */
+        &VFS::stat,
+        &VFS::mkdir,
+        &VFS::opendir,
+        &VFS::readdir,
+        &VFS::direntGetName,
+        &VFS::direntIsDir,
+        &VFS::closedir
     };
 }
 
