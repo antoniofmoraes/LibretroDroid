@@ -164,6 +164,13 @@ bool Environment::environment_handle_get_vfs_interface(struct retro_vfs_interfac
         return false;
     }
 
+    // libretro.h: "If the core asks for a newer VFS API version than the frontend supports, the
+    // frontend must return false." Answering yes hands a v2 table to a core that then calls the
+    // v3 members (opendir and the rest) past its end. ARMSX2 asks for 3 first and falls back.
+    if (vfsInterfaceInfo->required_interface_version > libretrodroid::VFS::SUPPORTED_VERSION) {
+        return false;
+    }
+
     vfsInterfaceInfo->required_interface_version = libretrodroid::VFS::SUPPORTED_VERSION;
     vfsInterfaceInfo->iface = libretrodroid::VFS::getInterface();
     return true;
